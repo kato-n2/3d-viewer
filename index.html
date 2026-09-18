@@ -38,9 +38,9 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf0f0f0);
         
-        // カメラの描画限界を広げておく
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100000);
-        camera.position.set(150, 150, 150);
+        // 初期カメラ位置（読み込み前に表示される位置）
+        camera.position.set(50, 50, 50); 
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -101,27 +101,26 @@
                     scene.add(currentModel);
                     loading.style.display = 'none';
 
-                    // --- 修正箇所：強制オートスケール機能 ---
+                    // 強制オートスケール機能（最大幅100にする）
                     const box = new THREE.Box3().setFromObject(currentModel);
                     const size = box.getSize(new THREE.Vector3());
                     const maxDim = Math.max(size.x, size.y, size.z);
 
-                    // どんな大きさでも最大幅が「100」になるように縮小・拡大
                     if(maxDim > 0) {
                         const scale = 100 / maxDim;
                         currentModel.scale.set(scale, scale, scale);
                     }
 
-                    // スケール変更後に再度バウンディングボックスを取り直し、原点へ移動
+                    // 中央に移動
                     const scaledBox = new THREE.Box3().setFromObject(currentModel);
                     const center = scaledBox.getCenter(new THREE.Vector3());
                     currentModel.position.x -= center.x;
                     currentModel.position.y -= center.y;
                     currentModel.position.z -= center.z;
 
-                    // カメラを固定位置に戻す
-                    camera.position.set(150, 150, 150);
-                    controls.target.set(0, 0, 0);
+                    // --- 修正箇所：カメラを近づける ---
+                    camera.position.set(50, 50, 50); // モデル（サイズ100）に近づける
+                    controls.target.set(0, 0, 0); // モデルの中心を注視
                     controls.update();
                 },
                 undefined,
