@@ -14,7 +14,16 @@
             border: 5px dashed #888; box-sizing: border-box;
         }
         #drop-zone p { font-size: 24px; pointer-events: none; }
-        #loading { position: absolute; top: 20px; left: 20px; font-size: 18px; display: none; z-index: 5; color: #333; }
+        #loading { position: absolute; top: 20px; left: 20px; font-size: 18px; display: none; z-index: 5; color: #333; font-weight: bold; }
+        
+        /* 操作説明のスタイル */
+        #instructions {
+            position: absolute; bottom: 20px; left: 20px;
+            background-color: rgba(255, 255, 255, 0.85); color: #333;
+            padding: 12px 16px; border-radius: 8px; font-size: 14px;
+            pointer-events: none; z-index: 5; display: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); line-height: 1.5;
+        }
     </style>
     <script type="importmap">
         {
@@ -28,6 +37,15 @@
 <body>
     <div id="drop-zone"><p>ここに .glb ファイルをドラッグ＆ドロップしてください</p></div>
     <div id="loading">読み込み中...</div>
+    
+    <!-- 操作説明パネル -->
+    <div id="instructions">
+        <b>【操作方法】</b><br>
+        ・<b>左ドラッグ</b>：視点の回転<br>
+        ・<b>右ドラッグ</b>：視点の平行移動<br>
+        ・<b>ホイール</b>：拡大 / 縮小<br>
+        <span style="color: #e60000; font-weight: bold;">・見たい場所をダブルクリック：そこを回転の中心にする</span>
+    </div>
 
     <script type="module">
         import * as THREE from 'three';
@@ -38,7 +56,6 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf0f0f0);
         
-        // カメラの初期設定（距離などは後で自動計算します）
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -47,6 +64,7 @@
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
+        controls.dampingFactor = 0.1; // 回転を少し滑らかに
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
@@ -55,21 +73,19 @@
         scene.add(directionalLight);
 
         let currentModel = null;
-
         const dropZone = document.getElementById('drop-zone');
         const loading = document.getElementById('loading');
+        const instructions = document.getElementById('instructions');
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             window.addEventListener(eventName, preventDefaults, false);
         });
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
+        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
 
         window.addEventListener('drop', (e) => {
             dropZone.style.display = 'none';
             loading.style.display = 'block';
+            instructions.style.display = 'none';
 
             const file = e.dataTransfer.files[0];
             if (file && (file.name.endsWith('.glb') || file.name.endsWith('.gltf'))) {
@@ -85,47 +101,40 @@
         function loadModel(url) {
             const dracoLoader = new DRACOLoader();
             dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-            
             const loader = new GLTFLoader();
             loader.setDRACOLoader(dracoLoader);
 
             loader.load(
                 url,
                 function (gltf) {
-                    if (currentModel) {
-                        scene.remove(currentModel);
-                    }
+                    if (currentModel) scene.remove(currentModel);
 
                     currentModel = gltf.scene;
                     scene.add(currentModel);
                     loading.style.display = 'none';
+                    instructions.style.display = 'block'; // 読み込み完了後に操作説明を表示
 
-                    // 1. モデルの本来のサイズと中心座標を取得
                     const box = new THREE.Box3().setFromObject(currentModel);
                     const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
                     const maxDim = Math.max(size.x, size.y, size.z);
 
-                    // 2. モデルを空間の中心(0,0,0)へ強制移動
                     currentModel.position.x -= center.x;
                     currentModel.position.y -= center.y;
                     currentModel.position.z -= center.z;
 
-                    // 3. カメラの距離を自動計算 (モデルが画面にぴったり収まる距離)
                     const fov = camera.fov * (Math.PI / 180);
-                    // 1.2 は少し余白を持たせるための数値。もっと近づけたい場合は 0.8 などに減らします。
                     let cameraDist = Math.abs((maxDim / 2) / Math.tan(fov / 2)) * 1.2;
-                    
-                    // ※万が一モデルサイズが異常な場合の安全対策
                     if(cameraDist < 1) cameraDist = 10;
 
-                    // 4. カメラの描画限界をモデルの大きさに合わせて広げる（途中で見えなくなるのを防ぐ）
+                    // ギリギリまで近づけるようにカメラの限界値を調整
+                    camera.near = maxDim / 1000;
+                    if(camera.near < 0.001) camera.near = 0.001;
                     camera.far = cameraDist * 10;
                     camera.updateProjectionMatrix();
 
-                    // 5. カメラを配置（斜め上から見下ろす位置）
                     camera.position.set(cameraDist * 0.7, cameraDist * 0.5, cameraDist * 0.7);
-                    controls.target.set(0, 0, 0); // 中央を注視
+                    controls.target.set(0, 0, 0);
                     controls.update();
                 },
                 undefined,
@@ -137,6 +146,30 @@
                 }
             );
         }
+
+        // --- 追加：ダブルクリックした位置を回転の中心（注視点）にする機能 ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('dblclick', (event) => {
+            if (!currentModel) return;
+
+            // マウスのクリック位置を計算
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            // モデルのどの部分をクリックしたか判定
+            const intersects = raycaster.intersectObject(currentModel, true);
+
+            if (intersects.length > 0) {
+                // クリックした3D座標を取得し、カメラの注視点をそこに移動
+                const point = intersects[0].point;
+                controls.target.copy(point);
+                controls.update();
+            }
+        });
+        // -------------------------------------------------------------
 
         function animate() {
             requestAnimationFrame(animate);
