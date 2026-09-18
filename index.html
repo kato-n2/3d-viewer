@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3Dモデル ドラッグ＆ドロップ確認ツール</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #333; color: white; font-family: sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        /* ドラッグ＆ドロップの案内画面のスタイル */
+        #drop-zone {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            background-color: rgba(0, 0, 0, 0.7); z-index: 10;
+            border: 5px dashed #888; box-sizing: border-box;
+        }
+        #drop-zone p { font-size: 24px; pointer-events: none; }
+        #loading { position: absolute; top: 20px; left: 20px; font-size: 18px; display: none; z-index: 5; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- ドラッグ＆ドロップの案内 -->
+    <div id="drop-zone"><p>ここに .glb ファイルをドラッグ＆ドロップしてください</p></div>
+    <div id="loading">読み込み中...</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+        // 1. 基本設定
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
+        camera.position.set(100, 100, 100);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(100, 100, 50);
+        scene.add(directionalLight);
+
+        let currentModel = null; // 現在表示中のモデルを保持する変数
+
+        // 2. ドラッグ＆ドロップの処理
+        const dropZone = document.getElementById('drop-zone');
+        const loading = document.getElementById('loading');
+
+        // デフォルトのブラウザ挙動をキャンセル
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            window.addEventListener(eventName, preventDefaults, false);
+        });
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // ドロップされた時の処理
+        window.addEventListener('drop', (e) => {
+            dropZone.style.display = 'none'; // 案内を隠す
+            loading.style.display = 'block'; // ロード中を表示
+
+            const file = e.dataTransfer.files[0];
+            if (file && (file.name.endsWith('.glb') || file.name.endsWith('.gltf'))) {
+                // ファイルをブラウザ内で読めるURLに変換
+                const objectURL = URL.createObjectURL(file);
+                loadModel(objectURL);
+            } else {
+                alert('glb または gltf ファイルをドロップしてください。');
+                dropZone.style.display = 'flex';
+                loading.style.display = 'none';
+            }
+        });
+
+        // 3. モデルの読み込み関数
+        function loadModel(url) {
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+            
+            const loader = new GLTFLoader();
+            loader.setDRACOLoader(dracoLoader);
+
+            loader.load(
+                url,
+                function (gltf) {
+                    // 既にモデルがあれば削除（連続して別のモデルを確認できるように）
+                    if (currentModel) {
+                        scene.remove(currentModel);
+                    }
+
+                    currentModel = gltf.scene;
+                    scene.add(currentModel);
+                    loading.style.display = 'none';
+
+                    // モデルを中央に配置
+                    const box = new THREE.Box3().setFromObject(currentModel);
+                    const center = box.getCenter(new THREE.Vector3());
+                    currentModel.position.x -= center.x;
+                    currentModel.position.y -= center.y;
+                    currentModel.position.z -= center.z;
+
+                    // カメラ位置の自動調整（モデルの大きさに合わせる）
+                    const size = box.getSize(new THREE.Vector3()).length();
+                    camera.position.set(size, size, size);
+                    controls.target.set(0, 0, 0);
+                    controls.update();
+                },
+                undefined,
+                function (error) {
+                    console.error(error);
+                    alert('読み込みエラーが発生しました。');
+                    loading.style.display = 'none';
+                    dropZone.style.display = 'flex';
+                }
+            );
+        }
+
+        // 4. アニメーションとリサイズ対応
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
