@@ -38,9 +38,8 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf0f0f0);
         
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100000);
-        // 初期カメラ位置（読み込み前に表示される位置）
-        camera.position.set(50, 50, 50); 
+        // カメラの初期設定（距離などは後で自動計算します）
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -101,26 +100,32 @@
                     scene.add(currentModel);
                     loading.style.display = 'none';
 
-                    // 強制オートスケール機能（最大幅100にする）
+                    // 1. モデルの本来のサイズと中心座標を取得
                     const box = new THREE.Box3().setFromObject(currentModel);
+                    const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
                     const maxDim = Math.max(size.x, size.y, size.z);
 
-                    if(maxDim > 0) {
-                        const scale = 100 / maxDim;
-                        currentModel.scale.set(scale, scale, scale);
-                    }
-
-                    // 中央に移動
-                    const scaledBox = new THREE.Box3().setFromObject(currentModel);
-                    const center = scaledBox.getCenter(new THREE.Vector3());
+                    // 2. モデルを空間の中心(0,0,0)へ強制移動
                     currentModel.position.x -= center.x;
                     currentModel.position.y -= center.y;
                     currentModel.position.z -= center.z;
 
-                    // --- 修正箇所：カメラを近づける ---
-                    camera.position.set(50, 50, 50); // モデル（サイズ100）に近づける
-                    controls.target.set(0, 0, 0); // モデルの中心を注視
+                    // 3. カメラの距離を自動計算 (モデルが画面にぴったり収まる距離)
+                    const fov = camera.fov * (Math.PI / 180);
+                    // 1.2 は少し余白を持たせるための数値。もっと近づけたい場合は 0.8 などに減らします。
+                    let cameraDist = Math.abs((maxDim / 2) / Math.tan(fov / 2)) * 1.2;
+                    
+                    // ※万が一モデルサイズが異常な場合の安全対策
+                    if(cameraDist < 1) cameraDist = 10;
+
+                    // 4. カメラの描画限界をモデルの大きさに合わせて広げる（途中で見えなくなるのを防ぐ）
+                    camera.far = cameraDist * 10;
+                    camera.updateProjectionMatrix();
+
+                    // 5. カメラを配置（斜め上から見下ろす位置）
+                    camera.position.set(cameraDist * 0.7, cameraDist * 0.5, cameraDist * 0.7);
+                    controls.target.set(0, 0, 0); // 中央を注視
                     controls.update();
                 },
                 undefined,
