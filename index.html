@@ -7,7 +7,6 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #333; color: white; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        /* ドラッグ＆ドロップの案内画面のスタイル */
         #drop-zone {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             display: flex; justify-content: center; align-items: center;
@@ -15,7 +14,7 @@
             border: 5px dashed #888; box-sizing: border-box;
         }
         #drop-zone p { font-size: 24px; pointer-events: none; }
-        #loading { position: absolute; top: 20px; left: 20px; font-size: 18px; display: none; z-index: 5; }
+        #loading { position: absolute; top: 20px; left: 20px; font-size: 18px; display: none; z-index: 5; color: #333; }
     </style>
     <script type="importmap">
         {
@@ -27,7 +26,6 @@
     </script>
 </head>
 <body>
-    <!-- ドラッグ＆ドロップの案内 -->
     <div id="drop-zone"><p>ここに .glb ファイルをドラッグ＆ドロップしてください</p></div>
     <div id="loading">読み込み中...</div>
 
@@ -37,11 +35,12 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
-        // 1. 基本設定
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf0f0f0);
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
-        camera.position.set(100, 100, 100);
+        
+        // カメラの描画限界を広げておく
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100000);
+        camera.position.set(150, 150, 150);
         
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -56,13 +55,11 @@
         directionalLight.position.set(100, 100, 50);
         scene.add(directionalLight);
 
-        let currentModel = null; // 現在表示中のモデルを保持する変数
+        let currentModel = null;
 
-        // 2. ドラッグ＆ドロップの処理
         const dropZone = document.getElementById('drop-zone');
         const loading = document.getElementById('loading');
 
-        // デフォルトのブラウザ挙動をキャンセル
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             window.addEventListener(eventName, preventDefaults, false);
         });
@@ -71,14 +68,12 @@
             e.stopPropagation();
         }
 
-        // ドロップされた時の処理
         window.addEventListener('drop', (e) => {
-            dropZone.style.display = 'none'; // 案内を隠す
-            loading.style.display = 'block'; // ロード中を表示
+            dropZone.style.display = 'none';
+            loading.style.display = 'block';
 
             const file = e.dataTransfer.files[0];
             if (file && (file.name.endsWith('.glb') || file.name.endsWith('.gltf'))) {
-                // ファイルをブラウザ内で読めるURLに変換
                 const objectURL = URL.createObjectURL(file);
                 loadModel(objectURL);
             } else {
@@ -88,7 +83,6 @@
             }
         });
 
-        // 3. モデルの読み込み関数
         function loadModel(url) {
             const dracoLoader = new DRACOLoader();
             dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -99,7 +93,6 @@
             loader.load(
                 url,
                 function (gltf) {
-                    // 既にモデルがあれば削除（連続して別のモデルを確認できるように）
                     if (currentModel) {
                         scene.remove(currentModel);
                     }
@@ -108,16 +101,26 @@
                     scene.add(currentModel);
                     loading.style.display = 'none';
 
-                    // モデルを中央に配置
+                    // --- 修正箇所：強制オートスケール機能 ---
                     const box = new THREE.Box3().setFromObject(currentModel);
-                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+
+                    // どんな大きさでも最大幅が「100」になるように縮小・拡大
+                    if(maxDim > 0) {
+                        const scale = 100 / maxDim;
+                        currentModel.scale.set(scale, scale, scale);
+                    }
+
+                    // スケール変更後に再度バウンディングボックスを取り直し、原点へ移動
+                    const scaledBox = new THREE.Box3().setFromObject(currentModel);
+                    const center = scaledBox.getCenter(new THREE.Vector3());
                     currentModel.position.x -= center.x;
                     currentModel.position.y -= center.y;
                     currentModel.position.z -= center.z;
 
-                    // カメラ位置の自動調整（モデルの大きさに合わせる）
-                    const size = box.getSize(new THREE.Vector3()).length();
-                    camera.position.set(size, size, size);
+                    // カメラを固定位置に戻す
+                    camera.position.set(150, 150, 150);
                     controls.target.set(0, 0, 0);
                     controls.update();
                 },
@@ -131,7 +134,6 @@
             );
         }
 
-        // 4. アニメーションとリサイズ対応
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
