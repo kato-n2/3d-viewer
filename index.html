@@ -16,7 +16,6 @@
         #drop-zone p { font-size: 24px; pointer-events: none; }
         #loading { position: absolute; top: 20px; left: 20px; font-size: 18px; display: none; z-index: 5; color: #333; font-weight: bold; }
         
-        /* 操作説明のスタイル */
         #instructions {
             position: absolute; bottom: 20px; left: 20px;
             background-color: rgba(255, 255, 255, 0.85); color: #333;
@@ -38,7 +37,6 @@
     <div id="drop-zone"><p>ここに .glb ファイルをドラッグ＆ドロップしてください</p></div>
     <div id="loading">読み込み中...</div>
     
-    <!-- 操作説明パネル -->
     <div id="instructions">
         <b>【操作方法】</b><br>
         ・<b>左ドラッグ</b>：視点の回転<br>
@@ -56,15 +54,20 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xf0f0f0);
         
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 10000);
+        // 【修正1】カメラの near（最小描画距離）を 0.00001 という極限まで小さくする
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.00001, 1000000);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        // 【修正2】logarithmicDepthBuffer を true にして、巨大なスケール差による面のチラつきを防ぐ
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            logarithmicDepthBuffer: true 
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.1; // 回転を少し滑らかに
+        controls.dampingFactor = 0.1;
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
@@ -112,7 +115,7 @@
                     currentModel = gltf.scene;
                     scene.add(currentModel);
                     loading.style.display = 'none';
-                    instructions.style.display = 'block'; // 読み込み完了後に操作説明を表示
+                    instructions.style.display = 'block'; 
 
                     const box = new THREE.Box3().setFromObject(currentModel);
                     const center = box.getCenter(new THREE.Vector3());
@@ -127,9 +130,7 @@
                     let cameraDist = Math.abs((maxDim / 2) / Math.tan(fov / 2)) * 1.2;
                     if(cameraDist < 1) cameraDist = 10;
 
-                    // ギリギリまで近づけるようにカメラの限界値を調整
-                    camera.near = maxDim / 1000;
-                    if(camera.near < 0.001) camera.near = 0.001;
+                    // 描画限界(far)だけを調整し、nearは初期設定の極小値を維持する
                     camera.far = cameraDist * 10;
                     camera.updateProjectionMatrix();
 
@@ -147,29 +148,24 @@
             );
         }
 
-        // --- 追加：ダブルクリックした位置を回転の中心（注視点）にする機能 ---
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
 
         window.addEventListener('dblclick', (event) => {
             if (!currentModel) return;
 
-            // マウスのクリック位置を計算
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
 
-            // モデルのどの部分をクリックしたか判定
             const intersects = raycaster.intersectObject(currentModel, true);
 
             if (intersects.length > 0) {
-                // クリックした3D座標を取得し、カメラの注視点をそこに移動
                 const point = intersects[0].point;
                 controls.target.copy(point);
                 controls.update();
             }
         });
-        // -------------------------------------------------------------
 
         function animate() {
             requestAnimationFrame(animate);
